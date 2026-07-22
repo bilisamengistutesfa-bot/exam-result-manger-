@@ -1,0 +1,1823 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>Exam Results Manager</title>
+
+    <!-- PWA Setup -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' fill='%231877f2'/%3E%3Ctext x='96' y='130' font-size='100' text-anchor='middle' fill='white' font-family='Arial'%3E📊%3C/text%3E%3C/svg%3E" />
+
+    <script>
+        // Dynamic Manifest
+        (function() {
+            const manifest = {
+                "name": "Exam Results Manager",
+                "short_name": "ExamResults",
+                "start_url": window.location.href,
+                "display": "standalone",
+                "background_color": "#f0f2f5",
+                "theme_color": "#1877f2",
+                "orientation": "portrait",
+                "icons": [{
+                    "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' fill='%231877f2'/%3E%3Ctext x='256' y='350' font-size='300' text-anchor='middle' fill='white' font-family='Arial'%3E📊%3C/text%3E%3C/svg%3E",
+                    "sizes": "512x512",
+                    "type": "image/svg+xml"
+                }, {
+                    "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' fill='%231877f2'/%3E%3Ctext x='96' y='130' font-size='100' text-anchor='middle' fill='white' font-family='Arial'%3E📊%3C/text%3E%3C/svg%3E",
+                    "sizes": "192x192",
+                    "type": "image/svg+xml"
+                }]
+            };
+            const blob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('link');
+            link.rel = 'manifest';
+            link.href = url;
+            document.head.appendChild(link);
+        })();
+
+        // Service Worker offline patch
+        (function registerSW() {
+            if (!('serviceWorker' in navigator)) return;
+            if (window.location.protocol !== 'http:' && window.location.protocol !== 'https:') {
+                console.warn('[SW] Service workers are only supported on http/https protocols.');
+                return;
+            }
+
+            const CACHE_NAME = 'exam-results-v2';
+            const BASE_URL = window.location.origin + window.location.pathname;
+            const RESOURCES = [
+                BASE_URL,
+                'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css',
+                'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/webfonts/fa-solid-900.woff2',
+                'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/webfonts/fa-regular-400.woff2',
+                'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/webfonts/fa-brands-400.woff2',
+                'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js',
+                'https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap',
+            ];
+            const swCode = `
+                const CACHE_NAME = '${CACHE_NAME}';
+                const RESOURCES = ${JSON.stringify(RESOURCES)};
+                const BASE_URL = '${BASE_URL}';
+                self.addEventListener('install', e => {
+                    e.waitUntil(
+                        caches.open(CACHE_NAME)
+                            .then(cache => cache.addAll(RESOURCES).catch(() => {}))
+                            .then(() => self.skipWaiting())
+                    );
+                });
+                self.addEventListener('activate', e => {
+                    e.waitUntil(
+                        caches.keys().then(keys => Promise.all(
+                            keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))
+                        )).then(() => self.clients.claim())
+                    );
+                });
+                self.addEventListener('fetch', e => {
+                    const url = e.request.url;
+                    if (e.request.method !== 'GET' || !url.startsWith('http')) {
+                        e.respondWith(fetch(e.request));
+                        return;
+                    }
+                    e.respondWith(
+                        caches.match(e.request).then(cached => {
+                            if (cached) return cached;
+                            return fetch(e.request).then(res => {
+                                if (res && res.status === 200) {
+                                    const clone = res.clone();
+                                    caches.open(CACHE_NAME).then(cache => cache.put(e.request, clone));
+                                }
+                                return res;
+                            }).catch(() => caches.match(BASE_URL) || new Response('Offline', { status: 503 }));
+                        })
+                    );
+                });
+            `;
+            try {
+                const blob = new Blob([swCode], { type: 'application/javascript' });
+                const swUrl = URL.createObjectURL(blob);
+                navigator.serviceWorker.register(swUrl, { scope: '/' })
+                    .then(() => console.log('[SW] Registered successfully'))
+                    .catch((err) => {
+                        console.warn('[SW] Registration failed:', err);
+                    });
+            } catch (e) { console.warn('[SW] Service worker blob failed:', e); }
+        })();
+    </script>
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+    <style>
+        /* ─── BASE ─── */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        :root {
+            --primary: #1877f2;
+            --primary-dark: #166fe5;
+            --bg: #f0f2f5;
+            --card: #fff;
+            --text: #1b1f24;
+            --text-secondary: #65676b;
+            --border: #e4e6eb;
+            --shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+            --radius: 14px;
+            --green: #31a24c;
+            --yellow: #f5b342;
+            --red: #e74c3c;
+            --purple: #8b5cf6;
+            --pink: #ec4899;
+            --orange: #f97316;
+            --teal: #14b8a6;
+            --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+        html,
+        body {
+            height: 100%;
+            height: 100dvh;
+            font-family: var(--font);
+            background: #e4e6eb;
+            color: var(--text);
+            overflow: hidden;
+            overscroll-behavior-y: none;
+        }
+        ::-webkit-scrollbar {
+            width: 3px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #bcc0c4;
+            border-radius: 10px;
+        }
+
+        #app {
+            width: 100%;
+            max-width: 480px;
+            height: 100%;
+            height: 100dvh;
+            margin: 0 auto;
+            background: var(--bg);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+            box-shadow: 0 0 40px rgba(0, 0, 0, 0.12);
+            padding-bottom: env(safe-area-inset-bottom, 0px);
+        }
+        @media (min-width: 481px) {
+            body {
+                padding: 12px 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: #d0d4d9;
+            }
+            #app {
+                border-radius: 24px;
+                max-height: 95vh;
+                height: 95vh;
+                max-width: 480px;
+            }
+        }
+
+        /* ─── HEADER ─── */
+        .header {
+            background: var(--primary);
+            padding: 10px 14px;
+            padding-top: calc(10px + env(safe-area-inset-top, 0px));
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+            z-index: 50;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.10);
+        }
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .header-left .logo-icon {
+            font-size: 22px;
+            color: #fff;
+        }
+        .header-title {
+            color: #fff;
+            font-size: 16px;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+        .header-title small {
+            font-weight: 400;
+            font-size: 9px;
+            opacity: 0.8;
+            display: block;
+            margin-top: -1px;
+        }
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .header-right .icon-btn {
+            color: #fff;
+            font-size: 16px;
+            background: rgba(255, 255, 255, 0.14);
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border: none;
+            transition: background 0.2s;
+            position: relative;
+        }
+        .header-right .icon-btn:active {
+            background: rgba(255, 255, 255, 0.30);
+        }
+
+        /* ─── MAIN CONTENT ─── */
+        .main-content {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            -webkit-overflow-scrolling: touch;
+            padding: 10px 12px calc(72px + env(safe-area-inset-bottom, 16px));
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            scroll-behavior: smooth;
+        }
+        .page {
+            display: none;
+            flex-direction: column;
+            gap: 10px;
+            animation: fadeUp 0.3s ease;
+        }
+        .page.active {
+            display: flex;
+        }
+        @keyframes fadeUp {
+            from {
+                opacity: 0;
+                transform: translateY(14px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .card {
+            background: var(--card);
+            border-radius: var(--radius);
+            padding: 12px 14px;
+            box-shadow: var(--shadow);
+            border: 1px solid rgba(0, 0, 0, 0.04);
+        }
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+            gap: 4px;
+        }
+        .card-header h3 {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--text);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .card-header h3 i {
+            color: var(--primary);
+            font-size: 14px;
+        }
+        .card-header .action-link {
+            font-size: 11px;
+            color: var(--primary);
+            font-weight: 600;
+            cursor: pointer;
+            background: none;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 20px;
+            transition: background 0.15s;
+        }
+        .card-header .action-link:active {
+            background: var(--border);
+        }
+
+        /* ─── STATS GRID ─── */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 6px;
+        }
+        .stat-box {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 8px 2px;
+            text-align: center;
+        }
+        .stat-box .number {
+            font-size: 16px;
+            font-weight: 800;
+            color: var(--text);
+        }
+        .stat-box .number.green { color: var(--green); }
+        .stat-box .number.red { color: var(--red); }
+        .stat-box .number.purple { color: var(--purple); }
+        .stat-box .number.orange { color: var(--orange); }
+        .stat-box .label {
+            font-size: 8px;
+            color: var(--text-secondary);
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.2px;
+            margin-top: 2px;
+        }
+
+        /* ─── SUBJECT LIST ─── */
+        .subject-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px;
+        }
+        .subject-chip {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 8px 4px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 2px solid transparent;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+        .subject-chip:active {
+            transform: scale(0.95);
+        }
+        .subject-chip.active {
+            border-color: var(--primary);
+            background: #e6f3ff;
+            color: var(--primary);
+        }
+        .subject-chip .chip-icon {
+            display: block;
+            font-size: 16px;
+            margin-bottom: 2px;
+        }
+        .subject-chip .chip-score {
+            font-size: 10px;
+            font-weight: 700;
+            display: block;
+            margin-top: 2px;
+        }
+        .subject-chip .chip-score.high { color: var(--green); }
+        .subject-chip .chip-score.low { color: var(--red); }
+
+        /* ─── RESULTS TABLE ─── */
+        .results-table {
+            width: 100%;
+            font-size: 12px;
+            border-collapse: collapse;
+        }
+        .results-table th {
+            text-align: left;
+            padding: 6px;
+            color: var(--text-secondary);
+            font-weight: 600;
+            font-size: 10px;
+            text-transform: uppercase;
+            border-bottom: 2px solid var(--border);
+        }
+        .results-table td {
+            padding: 8px 6px;
+            border-bottom: 1px solid var(--border);
+            vertical-align: middle;
+        }
+        .results-table tr:last-child td {
+            border-bottom: none;
+        }
+        .results-table .exam-name {
+            font-weight: 600;
+        }
+        .results-table .exam-score {
+            font-weight: 700;
+        }
+        .results-table .exam-score.high { color: var(--green); }
+        .results-table .exam-score.low { color: var(--red); }
+        .results-table .delete-exam-btn {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 12px;
+            padding: 4px 8px;
+            border-radius: 50%;
+            transition: background 0.15s;
+        }
+        .results-table .delete-exam-btn:active {
+            background: #fde8e8;
+            color: var(--red);
+        }
+
+        .add-exam-row {
+            display: flex;
+            gap: 8px;
+            margin-top: 14px;
+            flex-wrap: nowrap;
+            align-items: center;
+        }
+        .add-exam-row input {
+            flex: 1;
+            min-width: 50px;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 13px;
+            font-family: var(--font);
+            outline: none;
+            background: #f8f9fa;
+            transition: border 0.2s, background-color 0.2s;
+        }
+        .add-exam-row input:focus {
+            border-color: var(--primary);
+            background: #fff;
+        }
+        .add-exam-row button {
+            padding: 10px 16px;
+            border: none;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.1s, background-color 0.2s;
+            font-family: var(--font);
+            background: var(--primary);
+            color: #fff;
+            white-space: nowrap;
+        }
+        .add-exam-row button:active {
+            transform: scale(0.95);
+            background-color: var(--primary-dark);
+        }
+
+        .subject-avg-display {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 0 2px;
+            border-top: 2px solid var(--border);
+            margin-top: 6px;
+            font-size: 13px;
+            font-weight: 700;
+        }
+        .subject-avg-display .avg-value {
+            font-size: 18px;
+            color: var(--primary);
+        }
+        .subject-avg-display .avg-value.high { color: var(--green); }
+        .subject-avg-display .avg-value.low { color: var(--red); }
+
+        /* ─── CHARTS ─── */
+        .chart-wrapper {
+            position: relative;
+            height: 180px;
+            margin: 4px 0;
+        }
+        .chart-wrapper.tall {
+            height: 220px;
+        }
+
+        /* ─── BOTTOM NAV ─── */
+        .bottom-nav {
+            background: #fff;
+            border-top: 1px solid var(--border);
+            display: flex;
+            align-items: stretch;
+            justify-content: space-evenly;
+            padding-top: 6px;
+            padding-bottom: calc(6px + env(safe-area-inset-bottom, 8px));
+            flex-shrink: 0;
+            z-index: 100;
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            width: 100%;
+            flex-wrap: nowrap;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
+        }
+        .bottom-nav .nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 3px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 4px 0;
+            color: var(--text-secondary);
+            font-size: 8px;
+            font-weight: 500;
+            transition: color 0.2s, transform 0.1s;
+            font-family: var(--font);
+            flex: 1;
+            min-width: 0;
+            position: relative;
+        }
+        .bottom-nav .nav-item i {
+            font-size: 15px;
+            transition: color 0.2s;
+        }
+        .bottom-nav .nav-item span {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            width: 100%;
+            text-align: center;
+            display: block;
+        }
+        .bottom-nav .nav-item.active {
+            color: var(--primary);
+        }
+        .bottom-nav .nav-item.active i {
+            color: var(--primary);
+        }
+        .bottom-nav .nav-item:active {
+            transform: scale(0.95);
+        }
+
+        /* ─── MODAL ─── */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.50);
+            z-index: 300;
+            display: none;
+            align-items: flex-end;
+            justify-content: center;
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            animation: fadeIn 0.25s ease;
+        }
+        .modal-overlay.open {
+            display: flex;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        .modal-sheet {
+            background: #fff;
+            width: 100%;
+            max-width: 480px;
+            max-height: 85vh;
+            border-radius: 20px 20px 0 0;
+            padding: 14px 18px calc(14px + env(safe-area-inset-bottom, 12px));
+            transform: translateY(100%);
+            animation: slideUp 0.35s ease forwards;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        @keyframes slideUp {
+            from { transform: translateY(100%); }
+            to { transform: translateY(0); }
+        }
+        .modal-sheet .modal-handle {
+            width: 32px;
+            height: 4px;
+            background: #d0d4d9;
+            border-radius: 10px;
+            margin: 0 auto 12px;
+        }
+        .modal-sheet .modal-title {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 12px;
+            text-align: center;
+        }
+        .modal-sheet .form-group {
+            margin-bottom: 12px;
+        }
+        .modal-sheet .form-group label {
+            display: block;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 4px;
+        }
+        .modal-sheet .form-group input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            font-size: 14px;
+            font-family: var(--font);
+            outline: none;
+            transition: border 0.2s;
+            background: #f8f9fa;
+            color: var(--text);
+        }
+        .modal-sheet .form-group input:focus {
+            border-color: var(--primary);
+            background: #fff;
+        }
+        .modal-sheet .modal-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 18px;
+        }
+        .modal-sheet .modal-actions button {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.1s;
+            font-family: var(--font);
+        }
+        .modal-sheet .modal-actions button:active {
+            transform: scale(0.97);
+        }
+        .modal-sheet .modal-actions .btn-cancel {
+            background: var(--border);
+            color: var(--text);
+        }
+        .modal-sheet .modal-actions .btn-save {
+            background: var(--primary);
+            color: #fff;
+        }
+
+        /* ─── TOAST ─── */
+        .toast-container {
+            position: fixed;
+            top: calc(54px + env(safe-area-inset-top, 0px));
+            left: 50%;
+            transform: translateX(-50%);
+            width: 100%;
+            max-width: 400px;
+            padding: 0 12px;
+            z-index: 600;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            pointer-events: none;
+        }
+        .toast {
+            background: #1b1f24;
+            color: #fff;
+            padding: 8px 14px;
+            border-radius: 10px;
+            font-size: 12px;
+            font-weight: 500;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.20);
+            animation: toastIn 0.3s ease, toastOut 0.3s ease 3.5s forwards;
+            pointer-events: auto;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .toast i {
+            font-size: 14px;
+            flex-shrink: 0;
+        }
+        .toast.success i { color: var(--green); }
+        .toast.error i { color: var(--red); }
+        .toast.info i { color: var(--primary); }
+        @keyframes toastIn {
+            from {
+                opacity: 0;
+                transform: translateY(-16px) scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+        @keyframes toastOut {
+            from {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+            to {
+                opacity: 0;
+                transform: translateY(-16px) scale(0.95);
+            }
+        }
+
+        /* ─── EMPTY STATE ─── */
+        .empty-state {
+            text-align: center;
+            padding: 16px 10px;
+            color: var(--text-secondary);
+        }
+        .empty-state i {
+            font-size: 24px;
+            color: #bcc0c4;
+            margin-bottom: 4px;
+            display: block;
+        }
+        .empty-state p {
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .text-secondary {
+            color: var(--text-secondary);
+            font-size: 11px;
+        }
+
+        /* ─── RESPONSIVE ─── */
+        @media (max-width: 430px) {
+            .bottom-nav .nav-item {
+                font-size: 8px;
+            }
+            .bottom-nav .nav-item i {
+                font-size: 14px;
+            }
+            @media (max-width: 360px) {
+                .bottom-nav .nav-item span {
+                    display: none;
+                }
+                .bottom-nav .nav-item i {
+                    font-size: 18px;
+                }
+            }
+            .header-title {
+                font-size: 14px;
+            }
+            .header-left .logo-icon {
+                font-size: 18px;
+            }
+            .card {
+                padding: 10px 12px;
+            }
+            .add-exam-row input {
+                font-size: 12px;
+                padding: 8px 10px;
+            }
+            .results-table {
+                font-size: 11px;
+            }
+            .chart-wrapper {
+                height: 150px;
+            }
+            .chart-wrapper.tall {
+                height: 180px;
+            }
+        }
+
+        @media (min-width: 481px) {
+            .subject-grid {
+                grid-template-columns: repeat(4, 1fr);
+            }
+            .stats-grid {
+                grid-template-columns: repeat(4, 1fr);
+            }
+            .bottom-nav {
+                border-bottom-left-radius: 28px;
+                border-bottom-right-radius: 28px;
+                padding-bottom: 12px;
+            }
+            .bottom-nav .nav-item {
+                font-size: 9px;
+            }
+            .bottom-nav .nav-item i {
+                font-size: 18px;
+            }
+            .header-title {
+                font-size: 18px;
+            }
+            .header-left .logo-icon {
+                font-size: 24px;
+            }
+            .card {
+                padding: 14px 18px;
+            }
+            .card-header h3 {
+                font-size: 16px;
+            }
+            .stat-box .number {
+                font-size: 20px;
+            }
+            .chart-wrapper {
+                height: 200px;
+            }
+            .chart-wrapper.tall {
+                height: 260px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="app">
+
+        <!-- ─── HEADER ─── -->
+        <header class="header">
+            <div class="header-left">
+                <i class="fas fa-chart-line logo-icon"></i>
+                <div class="header-title">
+                    Exam Results
+                    <small>track your progress (0 - 100+)</small>
+                </div>
+            </div>
+            <div class="header-right">
+                <button class="icon-btn" id="statsBtn" title="Overall Stats">
+                    <i class="fas fa-calculator"></i>
+                </button>
+                <button class="icon-btn" id="resetBtn" title="Reset All Data">
+                    <i class="fas fa-trash-alt"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- ─── TOAST ─── -->
+        <div class="toast-container" id="toastContainer"></div>
+
+        <!-- ─── MAIN CONTENT ─── -->
+        <div class="main-content" id="mainContent">
+
+            <!-- ═══ DASHBOARD ═══ -->
+            <div class="page active" id="pageDashboard">
+                <!-- Quick Stats -->
+                <div class="card">
+                    <div class="stats-grid" id="dashStats">
+                        <div class="stat-box"><div class="number" id="statTotalExams">0</div><div class="label">Exams</div></div>
+                        <div class="stat-box"><div class="number" id="statAvgOverall">0</div><div class="label">Avg</div></div>
+                        <div class="stat-box"><div class="number" id="statHighest">0</div><div class="label">Highest</div></div>
+                        <div class="stat-box"><div class="number" id="statLowest">0</div><div class="label">Lowest</div></div>
+                    </div>
+                </div>
+
+                <!-- Subject Overview -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-book"></i> Subjects</h3>
+                        <span class="text-secondary" id="subjectCount">0 subjects</span>
+                    </div>
+                    <div class="subject-grid" id="subjectGrid"></div>
+                </div>
+
+                <!-- Chart Overview -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-chart-bar"></i> Subject Averages</h3>
+                        <button class="action-link" id="viewFullChart">View All →</button>
+                    </div>
+                    <div class="chart-wrapper"><canvas id="overviewChart"></canvas></div>
+                </div>
+
+                <!-- Recent Activity -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-clock"></i> Recent Exams</h3>
+                    </div>
+                    <div id="recentExams"><div class="empty-state"><i class="fas fa-inbox"></i><p>No exams recorded yet</p></div></div>
+                </div>
+            </div>
+
+            <!-- ═══ SUBJECT DETAIL ═══ -->
+            <div class="page" id="pageSubject">
+                <div class="card" id="subjectDetailCard">
+                    <div class="card-header">
+                        <h3 id="subjectDetailTitle"><i class="fas fa-book"></i> Subject</h3>
+                        <button class="action-link" id="backToDashboard">← Back</button>
+                    </div>
+                    <div id="subjectDetailContent"></div>
+                </div>
+            </div>
+
+            <!-- ═══ CHARTS FULL ═══ -->
+            <div class="page" id="pageCharts">
+                <div class="card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-chart-bar"></i> All Subject Averages</h3>
+                        <button class="action-link" id="backFromCharts">← Back</button>
+                    </div>
+                    <div class="chart-wrapper tall"><canvas id="fullChart"></canvas></div>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-chart-line"></i> Performance Trend</h3>
+                        <span class="text-secondary" id="trendInfo">All exams</span>
+                    </div>
+                    <div class="chart-wrapper tall"><canvas id="trendChart"></canvas></div>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-trophy"></i> Subject Rankings</h3>
+                    </div>
+                    <div id="rankingsList"><div class="empty-state"><i class="fas fa-list"></i><p>Add exams to see rankings</p></div></div>
+                </div>
+            </div>
+
+            <!-- ═══ STATS OVERVIEW ═══ -->
+            <div class="page" id="pageStats">
+                <div class="card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-calculator"></i> Full Statistics</h3>
+                        <button class="action-link" id="backFromStats">← Back</button>
+                    </div>
+                    <div id="fullStatsContent"></div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- ─── BOTTOM NAV ─── -->
+        <nav class="bottom-nav" id="bottomNav">
+            <button class="nav-item active" data-page="pageDashboard"><i class="fas fa-home"></i><span>Home</span></button>
+            <button class="nav-item" data-page="pageCharts"><i class="fas fa-chart-simple"></i><span>Charts</span></button>
+            <button class="nav-item" data-page="pageStats"><i class="fas fa-calculator"></i><span>Stats</span></button>
+        </nav>
+
+        <!-- ─── MODAL ─── -->
+        <div class="modal-overlay" id="mainModal">
+            <div class="modal-sheet">
+                <div class="modal-handle"></div>
+                <div class="modal-title" id="modalTitle">Add Exam Result</div>
+                <div id="modalBody"></div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // ─── CONFIG ───
+        const SUBJECTS = [
+            'History', 'Math', 'Chemistry', 'Biology', 'HPE',
+            'Geography', 'Citizenship', 'Economics', 'Amharic',
+            'English', 'Physics', 'ICT'
+        ];
+
+        const SUBJECT_ICONS = {
+            'History': '📜',
+            'Math': '➗',
+            'Chemistry': '🧪',
+            'Biology': '🧬',
+            'HPE': '🏃',
+            'Geography': '🌍',
+            'Citizenship': '⚖️',
+            'Economics': '💰',
+            'Amharic': '📖',
+            'English': '📚',
+            'Physics': '⚛️',
+            'ICT': '💻'
+        };
+
+        const STORAGE_KEY = 'exam_results_data_v2';
+
+        // ─── DATA ───
+        let data = {}; // { subject: [ { id, name, score, date }, ... ] }
+        let selectedSubject = null;
+        let chartInstances = { overview: null, full: null, trend: null };
+
+        // Helper to get color class based on score scale
+        function getScoreColorClass(score) {
+            return score >= 8 ? 'green' : 'red';
+        }
+
+        // Helper to get CSS text color or charts background color
+        function getScoreColorHex(score) {
+            return score >= 8 ? '#31a24c' : '#e74c3c';
+        }
+
+        function formatScoreValue(value) {
+            if (value === null || value === undefined || value === '') return '—';
+            const num = Number(value);
+            if (Number.isNaN(num)) return String(value);
+            return String(num);
+        }
+
+        function formatDisplayNumber(value, decimals = 2) {
+            if (value === null || value === undefined || value === '') return '—';
+            const num = Number(value);
+            if (Number.isNaN(num)) return String(value);
+            return Number(num.toFixed(decimals)).toString();
+        }
+
+        function normalizeSemester(value) {
+            return value === 'second' ? 'second' : 'first';
+        }
+
+        // ─── INIT ───
+        function loadData() {
+            try {
+                const raw = localStorage.getItem(STORAGE_KEY);
+                if (raw) {
+                    data = JSON.parse(raw);
+                    SUBJECTS.forEach(s => {
+                        if (!data[s]) data[s] = [];
+                        data[s] = data[s].map(ex => ({
+                            ...ex,
+                            score: Number(ex.score),
+                            semester: normalizeSemester(ex.semester)
+                        }));
+                    });
+                    return;
+                }
+            } catch (_) { /* ignore */ }
+            
+            data = {};
+            SUBJECTS.forEach(s => { data[s] = []; });
+            
+            const sampleExams = [
+                { subject: 'Math', score: 80, semester: 'first' },
+                { subject: 'Math', score: 90, semester: 'second' },
+                { subject: 'English', score: 72, semester: 'first' },
+                { subject: 'English', score: 88, semester: 'second' },
+                { subject: 'Physics', score: 65, semester: 'first' },
+                { subject: 'Physics', score: 78, semester: 'second' },
+                { subject: 'Chemistry', score: 92, semester: 'first' },
+                { subject: 'Biology', score: 78, semester: 'first' },
+                { subject: 'History', score: 84, semester: 'second' },
+                { subject: 'Geography', score: 68, semester: 'first' },
+            ];
+
+            sampleExams.forEach((ex, idx) => {
+                if (data[ex.subject]) {
+                    const currentCount = data[ex.subject].length + 1;
+                    data[ex.subject].push({
+                        id: generateId() + idx,
+                        name: `Exam #${currentCount}`,
+                        score: ex.score,
+                        semester: normalizeSemester(ex.semester),
+                        date: new Date().toISOString().slice(0, 10)
+                    });
+                }
+            });
+            saveData();
+        }
+
+        function saveData() {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        }
+
+        function generateId() {
+            return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+        }
+
+        function getSubjectResults(subject) {
+            return (data[subject] || []).map(ex => ({ ...ex, semester: normalizeSemester(ex.semester) }));
+        }
+
+        function getSemesterSubjectAverage(subject, semester) {
+            const results = getSubjectResults(subject).filter(r => normalizeSemester(r.semester) === semester);
+            if (!results.length) return 0;
+            const total = results.reduce((sum, r) => sum + (Number(r.score) || 0), 0);
+            return total / results.length;
+        }
+
+        function getSubjectSemesterSummary(subject) {
+            const firstAverage = getSemesterSubjectAverage(subject, 'first');
+            const secondAverage = getSemesterSubjectAverage(subject, 'second');
+            const hasFirst = firstAverage > 0;
+            const hasSecond = secondAverage > 0;
+            const average = (hasFirst && hasSecond)
+                ? (firstAverage + secondAverage) / 2
+                : (hasFirst ? firstAverage : (hasSecond ? secondAverage : 0));
+            const total = firstAverage + secondAverage;
+
+            return { firstAverage, secondAverage, average, total };
+        }
+
+        function getSubjectAverage(subject) {
+            return getSubjectSemesterSummary(subject).average;
+        }
+
+        function getSemesterAverage(semester) {
+            const validSubjects = SUBJECTS.filter(subject => getSemesterSubjectAverage(subject, semester) > 0);
+            if (!validSubjects.length) return 0;
+            const total = validSubjects.reduce((sum, subject) => sum + getSemesterSubjectAverage(subject, semester), 0);
+            return total / validSubjects.length;
+        }
+
+        function getOverallAverage() {
+            const subjectAverages = SUBJECTS.map(subject => getSubjectAverage(subject));
+            const validSubjectCount = subjectAverages.filter(value => value > 0).length;
+            if (!validSubjectCount) return 0;
+            return subjectAverages.reduce((sum, value) => sum + value, 0) / SUBJECTS.length;
+        }
+
+        function getTotalResults() {
+            return SUBJECTS.reduce((sum, subject) => sum + getSubjectAverage(subject), 0);
+        }
+
+        function getOverallHighest() {
+            let highest = 0;
+            let hasAny = false;
+            SUBJECTS.forEach(s => {
+                getSubjectResults(s).forEach(r => {
+                    hasAny = true;
+                    if (r.score > highest) highest = r.score;
+                });
+            });
+            return hasAny ? highest : 0;
+        }
+
+        function getOverallLowest() {
+            let lowest = 100;
+            let hasAny = false;
+            SUBJECTS.forEach(s => {
+                getSubjectResults(s).forEach(r => {
+                    hasAny = true;
+                    if (r.score < lowest) lowest = r.score;
+                });
+            });
+            return hasAny ? lowest : 0;
+        }
+
+        function getTotalExams() {
+            let count = 0;
+            SUBJECTS.forEach(s => { count += getSubjectResults(s).length; });
+            return count;
+        }
+
+        function getAllExams() {
+            const all = [];
+            SUBJECTS.forEach(s => {
+                getSubjectResults(s).forEach(r => {
+                    all.push({ ...r, subject: s });
+                });
+            });
+            return all.sort((a, b) => new Date(b.date) - new Date(a.date));
+        }
+
+        // ─── TOAST ───
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const icons = { success: 'fa-check-circle', error: 'fa-exclamation-circle', info: 'fa-info-circle' };
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `<i class="fas ${icons[type] || icons.info}"></i> ${message}`;
+            container.appendChild(toast);
+            setTimeout(() => { if (toast.parentNode) toast.remove(); }, 3500);
+        }
+
+        // ─── MODAL ───
+        const modal = document.getElementById('mainModal');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalBody = document.getElementById('modalBody');
+
+        function openModal(title, html) {
+            modalTitle.textContent = title;
+            modalBody.innerHTML = html;
+            modal.classList.add('open');
+        }
+
+        function closeModal() { modal.classList.remove('open'); }
+        modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+
+        // ─── ADD EXAM (MODAL VERSION) ───
+        function openAddExam(subject) {
+            const html = `
+                <div class="form-group">
+                    <label>Score</label>
+                    <input type="number" id="fExamScore" placeholder="85" step="0.1" required />
+                </div>
+                <div class="form-group">
+                    <label>Semester</label>
+                    <select id="fExamSemester">
+                        <option value="first">First Semester</option>
+                        <option value="second">Second Semester</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Date</label>
+                    <input type="date" id="fExamDate" value="${new Date().toISOString().slice(0,10)}" required />
+                </div>
+                <div class="modal-actions">
+                    <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+                    <button class="btn-save" id="saveExamBtn">Add Exam</button>
+                </div>
+            `;
+            openModal(`Add Exam — ${subject}`, html);
+            document.getElementById('saveExamBtn').addEventListener('click', () => {
+                const score = parseFloat(document.getElementById('fExamScore').value);
+                const semester = document.getElementById('fExamSemester').value;
+                const date = document.getElementById('fExamDate').value;
+                if (isNaN(score) || score < 0) { 
+                    showToast('Please enter a valid score', 'error');
+                    return; 
+                }
+                if (!date) { showToast('Please select a date', 'error'); return; }
+
+                const currentCount = data[subject].length + 1;
+                const autoName = `Exam #${currentCount}`;
+
+                data[subject].push({
+                    id: generateId(),
+                    name: autoName,
+                    score: score,
+                    semester: normalizeSemester(semester),
+                    date: date
+                });
+                saveData();
+                closeModal();
+                showToast(`✅ Added ${autoName} (${formatScoreValue(score)}) to ${subject}`, 'success');
+                renderAll();
+            });
+        }
+
+        // ─── DELETE EXAM ───
+        function deleteExam(subject, id) {
+            data[subject] = data[subject].filter(e => e.id !== id);
+            
+            // Re-index remaining exams so names match actual positions
+            data[subject] = data[subject].reverse().map((exam, idx) => {
+                return { ...exam, name: `Exam #${idx + 1}` };
+            }).reverse();
+
+            saveData();
+            renderAll();
+            showToast('🗑️ Exam deleted and list re-indexed', 'error');
+        }
+
+        // Fix layout recalculations under mobile software keyboards
+        function syncAppViewportHeight() {
+            const vh = window.innerHeight * 0.01;
+            document.documentElement.style.setProperty('--vh', `${vh}px`);
+        }
+
+        // ─── RENDER: DASHBOARD ───
+        function renderDashboard() {
+            const total = getTotalExams();
+            const overallAvg = getOverallAverage();
+            const highest = getOverallHighest();
+            const lowest = getOverallLowest();
+
+            // Set scores & colors matching precise < 8 rule
+            document.getElementById('statTotalExams').textContent = total;
+            
+            const overallEl = document.getElementById('statAvgOverall');
+            overallEl.textContent = total > 0 ? formatDisplayNumber(overallAvg) : '0';
+            overallEl.className = `number ${getScoreColorClass(overallAvg)}`;
+
+            const highestEl = document.getElementById('statHighest');
+            highestEl.textContent = total > 0 ? formatDisplayNumber(highest) : '0';
+            highestEl.className = `number ${getScoreColorClass(highest)}`;
+
+            const lowestEl = document.getElementById('statLowest');
+            lowestEl.textContent = total > 0 ? formatDisplayNumber(lowest) : '0';
+            lowestEl.className = `number ${getScoreColorClass(lowest)}`;
+
+            // Subject count
+            let hasDataCount = 0;
+            SUBJECTS.forEach(s => { if (getSubjectResults(s).length > 0) hasDataCount++; });
+            document.getElementById('subjectCount').textContent = `${hasDataCount}/${SUBJECTS.length} subjects`;
+
+            // Subject grid
+            const grid = document.getElementById('subjectGrid');
+            grid.innerHTML = SUBJECTS.map(s => {
+                const results = getSubjectResults(s);
+                const avg = getSubjectAverage(s);
+                const count = results.length;
+                const scoreClass = getScoreColorClass(avg);
+                return `
+                    <div class="subject-chip ${selectedSubject === s ? 'active' : ''}" data-subject="${s}">
+                        <span class="chip-icon">${SUBJECT_ICONS[s] || '📘'}</span>
+                        ${s}
+                        <span class="chip-score ${scoreClass}">${count > 0 ? formatDisplayNumber(getSubjectAverage(s)) : '—'}</span>
+                    </div>
+                `;
+            }).join('');
+
+            grid.querySelectorAll('.subject-chip').forEach(el => {
+                el.addEventListener('click', function() {
+                    const subj = this.dataset.subject;
+                    selectedSubject = subj;
+                    renderAll();
+                    navigateTo('pageSubject');
+                    renderSubjectDetail(subj);
+                });
+            });
+
+            // Recent exams (last 5)
+            const recent = getAllExams().slice(0, 5);
+            const container = document.getElementById('recentExams');
+            if (!recent.length) {
+                container.innerHTML = `<div class="empty-state"><i class="fas fa-inbox"></i><p>No exams recorded yet</p><small>Tap a subject to add your first exam</small></div>`;
+            } else {
+                container.innerHTML = recent.map(e => `
+                    <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;align-items:center;">
+                        <span><strong>${e.subject}</strong> — ${e.name}</span>
+                        <span style="font-weight:700;color:${getScoreColorHex(e.score)}">${formatDisplayNumber(e.score)} / 100</span>
+                    </div>
+                `).join('');
+            }
+        }
+
+        // ─── RENDER: SUBJECT DETAIL ───
+        function renderSubjectDetail(subject) {
+            const title = document.getElementById('subjectDetailTitle');
+            title.innerHTML = `<i class="fas fa-book"></i> ${subject} ${SUBJECT_ICONS[subject] || ''}`;
+
+            const container = document.getElementById('subjectDetailContent');
+            const results = getSubjectResults(subject);
+            const avg = getSubjectAverage(subject);
+
+            let html = `
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:4px;">
+                    <span style="font-size:13px;color:var(--text-secondary);">${results.length} exams</span>
+                    <span style="font-size:20px;font-weight:800;color:${getScoreColorHex(avg)}">${avg > 0 ? formatDisplayNumber(avg) + ' / 100' : '—'}</span>
+                </div>
+            `;
+
+            if (!results.length) {
+                html += `
+                    <div class="empty-state"><i class="fas fa-plus-circle"></i><p>No exams yet</p><small>Add your first exam below</small></div>
+                `;
+            } else {
+                html += `
+                    <table class="results-table">
+                        <thead><tr><th>Exam</th><th>Score</th><th>Semester</th><th>Date</th><th></th></tr></thead>
+                        <tbody>
+                            ${results.slice().sort((a,b) => new Date(b.date) - new Date(a.date)).map(r => `
+                                <tr>
+                                    <td class="exam-name">${r.name}</td>
+                                    <td class="exam-score" style="color: ${getScoreColorHex(r.score)};">${formatDisplayNumber(r.score)} / 100</td>
+                                    <td style="font-size:10px;color:var(--text-secondary);">${normalizeSemester(r.semester) === 'second' ? 'Second' : 'First'}</td>
+                                    <td style="font-size:10px;color:var(--text-secondary);">${r.date}</td>
+                                    <td><button class="delete-exam-btn" data-id="${r.id}" data-subject="${subject}"><i class="fas fa-times"></i></button></td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+            }
+
+            // Simplified: only require score and date
+            html += `
+                <div class="add-exam-row">
+                    <input type="number" id="addExamScore" placeholder="Enter score" step="0.1" required />
+                    <select id="addExamSemester">
+                        <option value="first">First Semester</option>
+                        <option value="second">Second Semester</option>
+                    </select>
+                    <input type="date" id="addExamDate" value="${new Date().toISOString().slice(0,10)}" required />
+                    <button id="addExamBtn">+ Add</button>
+                </div>
+            `;
+
+            container.innerHTML = html;
+
+            // Simplified Add Exam handler
+            document.getElementById('addExamBtn')?.addEventListener('click', () => {
+                const score = parseFloat(document.getElementById('addExamScore').value);
+                const semester = document.getElementById('addExamSemester').value;
+                const date = document.getElementById('addExamDate').value;
+                if (isNaN(score) || score < 0) { showToast('Enter a valid score', 'error'); return; }
+                if (!date) { showToast('Select a date', 'error'); return; }
+
+                const currentCount = data[subject].length + 1;
+                const autoName = `Exam #${currentCount}`;
+
+                data[subject].push({ id: generateId(), name: autoName, score, semester: normalizeSemester(semester), date });
+                saveData();
+                renderAll();
+                renderSubjectDetail(subject);
+                showToast(`✅ Added ${autoName} (${formatScoreValue(score)})`, 'success');
+            });
+
+            // Delete handlers
+            container.querySelectorAll('.delete-exam-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    deleteExam(this.dataset.subject, this.dataset.id);
+                });
+            });
+        }
+
+        // ─── RENDER: CHARTS ───
+        function renderCharts() {
+            renderOverviewChart();
+            renderFullChart();
+            renderTrendChart();
+            renderRankings();
+        }
+
+        function renderOverviewChart() {
+            const ctx = document.getElementById('overviewChart').getContext('2d');
+            if (chartInstances.overview) { chartInstances.overview.destroy(); chartInstances.overview = null; }
+
+            const labels = [];
+            const scores = [];
+            const colors = [];
+            SUBJECTS.forEach(s => {
+                const avg = getSubjectAverage(s);
+                const count = getSubjectResults(s).length;
+                if (count > 0) {
+                    labels.push(s);
+                    scores.push(avg);
+                    colors.push(getScoreColorHex(avg));
+                }
+            });
+
+            if (!labels.length) {
+                chartInstances.overview = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: { labels: ['No Data'], datasets: [{ data: [1], backgroundColor: ['#e4e6eb'] }] },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+                });
+                return;
+            }
+
+            chartInstances.overview = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Average Score (out of 100)',
+                        data: scores,
+                        backgroundColor: colors,
+                        borderRadius: 4,
+                        borderSkipped: false,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return formatDisplayNumber(context.parsed.y) + ' / 100';
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: { beginAtZero: true, max: 100, grid: { color: 'rgba(0,0,0,0.05)' } },
+                        x: { grid: { display: false }, ticks: { font: { size: 8 } } }
+                    }
+                }
+            });
+        }
+
+        function renderFullChart() {
+            const ctx = document.getElementById('fullChart').getContext('2d');
+            if (chartInstances.full) { chartInstances.full.destroy(); chartInstances.full = null; }
+
+            const labels = [];
+            const scores = [];
+            const colors = [];
+            SUBJECTS.forEach(s => {
+                const avg = getSubjectAverage(s);
+                const count = getSubjectResults(s).length;
+                if (count > 0) {
+                    labels.push(s);
+                    scores.push(avg);
+                    colors.push(getScoreColorHex(avg));
+                }
+            });
+
+            if (!labels.length) {
+                chartInstances.full = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: { labels: ['No Data'], datasets: [{ data: [1], backgroundColor: ['#e4e6eb'] }] },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+                });
+                return;
+            }
+
+            chartInstances.full = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Average Score',
+                        data: scores,
+                        backgroundColor: colors,
+                        borderRadius: 4,
+                        borderSkipped: false,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return formatDisplayNumber(context.parsed.y) + ' / 100';
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: { beginAtZero: true, max: 100, grid: { color: 'rgba(0,0,0,0.05)' } },
+                        x: { grid: { display: false }, ticks: { font: { size: 9 } } }
+                    }
+                }
+            });
+        }
+
+        function renderTrendChart() {
+            const ctx = document.getElementById('trendChart').getContext('2d');
+            if (chartInstances.trend) { chartInstances.trend.destroy(); chartInstances.trend = null; }
+
+            const allExams = getAllExams();
+            if (allExams.length < 2) {
+                chartInstances.trend = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: allExams.length ? [allExams[0].name] : ['No Data'],
+                        datasets: [{
+                            label: 'Score',
+                            data: allExams.length ? [allExams[0].score] : [0],
+                            borderColor: '#1877f2',
+                            backgroundColor: 'rgba(24,119,242,0.1)',
+                            fill: true,
+                            tension: 0.3,
+                            pointRadius: 5,
+                            pointBackgroundColor: allExams.length ? getScoreColorHex(allExams[0].score) : '#ccc',
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        return formatDisplayNumber(context.parsed.y) + ' / 100';
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: { beginAtZero: true, max: 100, grid: { color: 'rgba(0,0,0,0.05)' } },
+                            x: { grid: { display: false }, ticks: { font: { size: 8 } } }
+                        }
+                    }
+                });
+                document.getElementById('trendInfo').textContent = allExams.length + ' exam(s)';
+                return;
+            }
+
+            const sorted = [...allExams].sort((a, b) => new Date(a.date) - new Date(b.date));
+            const labels = sorted.map(e => e.subject + ': ' + e.name);
+            const dataScores = sorted.map(e => e.score);
+            const colors = dataScores.map(d => getScoreColorHex(d));
+
+            const minVal = Math.min(...dataScores);
+            const minIndex = dataScores.indexOf(minVal);
+
+            chartInstances.trend = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Exam Score',
+                        data: dataScores,
+                        borderColor: '#1877f2',
+                        backgroundColor: 'rgba(24,119,242,0.1)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 6,
+                        pointBackgroundColor: colors,
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 2,
+                        borderWidth: 2,
+                    }, {
+                        label: 'Lowest Score',
+                        data: dataScores.map((d, i) => i === minIndex ? d : null),
+                        borderColor: '#e74c3c',
+                        borderWidth: 3,
+                        borderDash: [5, 5],
+                        pointRadius: 8,
+                        pointBackgroundColor: '#e74c3c',
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 2,
+                        fill: false,
+                        tension: 0,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top',
+                            labels: {
+                                font: { size: 10, weight: '500' },
+                                usePointStyle: true,
+                                boxWidth: 10,
+                                padding: 8
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    if (context.datasetIndex === 0) {
+                                        return 'Score: ' + formatDisplayNumber(context.parsed.y) + ' / 100';
+                                    } else {
+                                        return '🔴 LOWEST: ' + formatDisplayNumber(context.parsed.y) + ' / 100';
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: { beginAtZero: true, max: 100, grid: { color: 'rgba(0,0,0,0.05)' } },
+                        x: { grid: { display: false }, ticks: { font: { size: 7 }, maxRotation: 45 } }
+                    }
+                }
+            });
+            document.getElementById('trendInfo').textContent = sorted.length + ' exams · Red details only show for scores < 8.0';
+        }
+
+        function renderRankings() {
+            const container = document.getElementById('rankingsList');
+            const rankings = [];
+            SUBJECTS.forEach(s => {
+                const avg = getSubjectAverage(s);
+                const count = getSubjectResults(s).length;
+                if (count > 0) {
+                    rankings.push({ subject: s, avg: avg, count: count, icon: SUBJECT_ICONS[s] || '📘' });
+                }
+            });
+            rankings.sort((a, b) => b.avg - a.avg);
+
+            if (!rankings.length) {
+                container.innerHTML = `<div class="empty-state"><i class="fas fa-list"></i><p>No data to rank</p></div>`;
+                return;
+            }
+
+            container.innerHTML = rankings.map((r, i) => `
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <span style="font-weight:700;color:var(--text-secondary);font-size:14px;">#${i+1}</span>
+                        <span style="font-size:18px;">${r.icon}</span>
+                        <span style="font-weight:600;">${r.subject}</span>
+                        <span style="font-size:10px;color:var(--text-secondary);">(${r.count} exams)</span>
+                    </div>
+                    <span style="font-weight:800;font-size:16px;color:${getScoreColorHex(r.avg)}">${formatDisplayNumber(r.avg)} / 100</span>
+                </div>
+            `).join('');
+        }
+
+        // ─── RENDER: STATS ───
+        function renderStats() {
+            const container = document.getElementById('fullStatsContent');
+            const total = getTotalExams();
+            const overall = getOverallAverage();
+            const highest = getOverallHighest();
+            const lowest = getOverallLowest();
+
+            let html = `
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;">
+                    <div style="background:#f8f9fa;border-radius:8px;padding:10px;text-align:center;">
+                        <div style="font-size:22px;font-weight:800;color:var(--primary);">${total}</div>
+                        <div style="font-size:10px;color:var(--text-secondary);">Total Exams</div>
+                    </div>
+                    <div style="background:#f8f9fa;border-radius:8px;padding:10px;text-align:center;">
+                        <div style="font-size:22px;font-weight:800;color:${getScoreColorHex(overall)}">${total > 0 ? formatDisplayNumber(overall) : '0'}</div>
+                        <div style="font-size:10px;color:var(--text-secondary);">Overall Avg</div>
+                    </div>
+                    <div style="background:#f8f9fa;border-radius:8px;padding:10px;text-align:center;">
+                        <div style="font-size:22px;font-weight:800;color:var(--green);">${total > 0 ? formatDisplayNumber(highest) : '0'}</div>
+                        <div style="font-size:10px;color:var(--text-secondary);">Highest Score</div>
+                    </div>
+                </div>
+                <div style="margin-bottom:12px;">
+                    <div style="background:#fcf1f1;border-radius:8px;padding:10px;text-align:center;border:1px solid ${lowest < 8 ? 'var(--red)' : 'var(--border)'};">
+                        <div style="font-size:22px;font-weight:800;color:${getScoreColorHex(lowest)};">${total > 0 ? formatDisplayNumber(lowest) : '0'}</div>
+                        <div style="font-size:11px;color:var(--text-secondary);">${lowest < 8 ? '⚠️ Lowest Score (Needs Focus < 8)' : 'Lowest Score (Fully Satisfactory)'}</div>
+                    </div>
+                </div>
+                <div style="font-size:12px;font-weight:600;margin-bottom:6px;">Subject Breakdown (Weighted Averages)</div>
+            `;
+
+            SUBJECTS.forEach(s => {
+                const results = getSubjectResults(s);
+                const avg = getSubjectAverage(s);
+                const count = results.length;
+                if (count === 0) {
+                    html += `
+                        <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;color:var(--text-secondary);">
+                            <span>${SUBJECT_ICONS[s] || '📘'} ${s}</span>
+                            <span>—</span>
+                        </div>
+                    `;
+                    return;
+                }
+                const max = Math.max(...results.map(r => r.score));
+                const min = Math.min(...results.map(r => r.score));
+                html += `
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;">
+                        <span style="font-weight:600;">${SUBJECT_ICONS[s] || '📘'} ${s}</span>
+                        <span style="display:flex;gap:8px;align-items:center;">
+                            <span style="color:var(--green);font-size:10px;">↑${formatDisplayNumber(max)}</span>
+                            <span style="font-weight:800;color:${getScoreColorHex(avg)}">${formatDisplayNumber(avg)}</span>
+                            <span style="color:${getScoreColorHex(min)};font-size:10px;">↓${formatDisplayNumber(min)}</span>
+                            <span style="font-size:10px;color:var(--text-secondary);">(${count})</span>
+                        </span>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        // ─── NAVIGATION ───
+        function navigateTo(pageId) {
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            document.getElementById(pageId).classList.add('active');
+            
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            const navMap = { 'pageDashboard': 0, 'pageCharts': 1, 'pageStats': 2 };
+            if (navMap[pageId] !== undefined) {
+                document.querySelectorAll('.nav-item')[navMap[pageId]].classList.add('active');
+            }
+            
+            if (pageId === 'pageCharts') renderCharts();
+            if (pageId === 'pageStats') renderStats();
+        }
+
+        // ─── RENDER ALL ───
+        function renderAll() {
+            renderDashboard();
+            if (selectedSubject && document.getElementById('pageSubject').classList.contains('active')) {
+                renderSubjectDetail(selectedSubject);
+            }
+            if (document.getElementById('pageCharts').classList.contains('active')) {
+                renderCharts();
+            }
+            if (document.getElementById('pageStats').classList.contains('active')) {
+                renderStats();
+            }
+        }
+
+        // ─── RESET DATA ───
+        function resetAllData() {
+            if (!confirm('⚠️ This will delete ALL your exam data. Are you sure?')) return;
+            SUBJECTS.forEach(s => { data[s] = []; });
+            saveData();
+            renderAll();
+            showToast('🗑️ All data cleared', 'error');
+        }
+
+        // ─── EVENT BINDINGS ───
+        document.addEventListener('DOMContentLoaded', function() {
+            syncAppViewportHeight();
+            loadData();
+            renderAll();
+
+            // Navigation clicks
+            document.querySelectorAll('.nav-item').forEach(item => {
+                item.addEventListener('click', function() {
+                    navigateTo(this.dataset.page);
+                });
+            });
+
+            // Return links
+            document.getElementById('backToDashboard').addEventListener('click', () => navigateTo('pageDashboard'));
+            document.getElementById('backFromCharts').addEventListener('click', () => navigateTo('pageDashboard'));
+            document.getElementById('backFromStats').addEventListener('click', () => navigateTo('pageDashboard'));
+            document.getElementById('viewFullChart').addEventListener('click', () => navigateTo('pageCharts'));
+
+            // Top action bar
+            document.getElementById('statsBtn').addEventListener('click', () => navigateTo('pageStats'));
+            document.getElementById('resetBtn').addEventListener('click', resetAllData);
+
+            // Escape closes modals
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape' && modal.classList.contains('open')) closeModal();
+            });
+
+            console.log('📊 Exam Results Manager loaded successfully.');
+        });
+
+        window.addEventListener('resize', function() {
+            syncAppViewportHeight();
+            Object.values(chartInstances).forEach(c => { if (c) c.resize(); });
+        });
+    </script>
+
+</body>
+</html>
